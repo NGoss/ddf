@@ -37,6 +37,7 @@ import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -60,6 +61,7 @@ import org.osgi.service.cm.Configuration;
 import com.jayway.restassured.response.Response;
 
 import ddf.common.test.BeforeExam;
+import static ddf.common.test.WaitCondition.expect;
 
 @RunWith(PaxExam.class)
 @ExamReactorStrategy(PerClass.class)
@@ -118,8 +120,10 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
                 .getConfiguration("org.codice.ddf.security.idp.server.IdpEndpoint", null);
         clientConfig.update(clientSettings);
         serverConfig.update(serverSettings);
-        assertThat(clientConfig.getProperties(), notNullValue());
-        assertThat(serverConfig.getProperties(), notNullValue());
+        expect("Configs to update").within(2, TimeUnit.MINUTES)
+                .until(clientConfig::getProperties, notNullValue());
+        expect("Configs to update").within(2, TimeUnit.MINUTES)
+                .until(serverConfig::getProperties, notNullValue());
     }
 
     private String getRedirectUrl(Response response) {
