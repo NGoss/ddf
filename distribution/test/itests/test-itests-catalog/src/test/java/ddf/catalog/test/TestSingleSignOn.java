@@ -16,7 +16,6 @@ package ddf.catalog.test;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.equalToIgnoringWhiteSpace;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.isEmptyOrNullString;
@@ -83,7 +82,7 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
     private static final DynamicUrl WHO_AM_I_URL = new DynamicUrl(SERVICE_ROOT, "/whoami");
 
     protected final DynamicUrl AUTHENTICATION_REQUEST_ISSUER = new DynamicUrl(SERVICE_ROOT,
-            "/saml");
+            "/saml/sso");
 
     @BeforeExam
     public void beforeTest() throws Exception {
@@ -129,7 +128,11 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
         // The key is the "id" and the value type is determined by the cardinality as such:
         // Positive = array, negative = vector, 0 (none) = single variable
         Dictionary<String, Object> settings = new Hashtable<>();
-        settings.put(propertyName, metadata);
+        if (propertyName.equals("spMetadata")) {
+            settings.put(propertyName, new String[] {metadata});
+        } else {
+            settings.put(propertyName, metadata);
+        }
 
         // Update the client and server with the metadata
         final Configuration configuration = getAdminConfig().getConfiguration(pid, null);
@@ -138,10 +141,8 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
         //Wait for the updates to become effective
         expect("Configs to update").
                 within(2, TimeUnit.MINUTES).
-                until(() -> configuration.getProperties() == null ?
-                                "" :
-                                (String) configuration.getProperties().get(propertyName),
-                        equalToIgnoringWhiteSpace(metadata));
+                until(() -> configuration.getProperties() != null &&
+                            configuration.getProperties().get(propertyName) != null);
     }
 
     private String getRedirectUrl(Response response) {
@@ -300,7 +301,8 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
 
         String metadata = IOUtils
                 .toString(getClass().getResourceAsStream("/confluence-sp-metadata.xml"));
-        setMetadata(metadata, "spMetadata", "org.codice.ddf.security.idp.server.IdpEndpoint",
+        String md = String.format(metadata,AUTHENTICATION_REQUEST_ISSUER);
+        setMetadata(md, "spMetadata", "org.codice.ddf.security.idp.server.IdpEndpoint",
                 "saml-schema-metadata-2.0.xsd");
         InputStream istream = this.getClass()
                 .getResourceAsStream("/confluence-sp-authentication-request.xml");
@@ -308,7 +310,7 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
         String authRequestTemplate = IOUtils.toString(istream);
         String issueInstant = new DateTime().toString();
         String samlRequest = String
-                .format(authRequestTemplate, issueInstant, AUTHENTICATION_REQUEST_ISSUER);
+                .format(authRequestTemplate, AUTHENTICATION_REQUEST_ISSUER);
 
         return RestSecurity.deflateAndBase64Encode(samlRequest);
     }
@@ -316,12 +318,20 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
     @Test
     public void testConfluenceSso() throws Exception {
         String idpUrl = new DynamicUrl(SERVICE_ROOT, "/idp/login/sso").getUrl();
+        String mockSamlRequest = getMockSamlRequest();
+        
+        // Sign the query string -> SAMLRequest="blah"&RelayState="blah"&SigAlg="blah"
 
         given().
                 auth().preemptive().basic("admin","admin").
                 param("AuthMethod","up").
-                param("SAMLRequest", getMockSamlRequest()).
+                param("SAMLRequest", mockSamlRequest).
+                param("RelayState", "TestRelayState").
+                param("SigAlg","").
+                param("Signature", "").
                 redirects().follow(false).
+        expect().
+                statusCode(200).
         get(idpUrl).
                 statusCode();
     }

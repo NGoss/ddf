@@ -2,7 +2,7 @@
                     AssertionConsumerServiceURL="https://jira01.lab.inserve.local/plugins/servlet/samlsso"
                     Destination="https://dc01.ad.lab.inserve.local/adfs/ls/"
                     ID="1f"
-                    IssueInstant="%s" Version="2.0">
+                    IssueInstant="2015-02-06T19:10:51.620Z" Version="2.0">
     <samlp:Issuer xmlns:samlp="urn:oasis:names:tc:SAML:2.0:assertion">
         %s
     </samlp:Issuer>
