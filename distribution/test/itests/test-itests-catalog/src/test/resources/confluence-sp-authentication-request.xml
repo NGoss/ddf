@@ -1,0 +1,15 @@
+<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
+                    AssertionConsumerServiceURL="https://jira01.lab.inserve.local/plugins/servlet/samlsso"
+                    Destination="https://dc01.ad.lab.inserve.local/adfs/ls/"
+                    ID="1f"
+                    IssueInstant="%s" Version="2.0">
+    <samlp:Issuer xmlns:samlp="urn:oasis:names:tc:SAML:2.0:assertion">
+        %s
+    </samlp:Issuer>
+    <saml2p:RequestedAuthnContext xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol"
+                                  Comparison="minimum">
+        <saml:AuthnContextClassRef xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">
+            urn:oasis:names:tc:SAML:2.0:ac:classes:Password
+        </saml:AuthnContextClassRef>
+    </saml2p:RequestedAuthnContext>
+</samlp:AuthnRequest>

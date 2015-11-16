@@ -16,6 +16,7 @@ package ddf.catalog.test;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalToIgnoringWhiteSpace;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.isEmptyOrNullString;
@@ -28,9 +29,10 @@ import static org.junit.Assert.fail;
 import static com.jayway.restassured.RestAssured.get;
 import static com.jayway.restassured.RestAssured.given;
 import static com.jayway.restassured.authentication.CertificateAuthSettings.certAuthSettings;
-
 import static ddf.common.test.WaitCondition.expect;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringReader;
 import java.net.URI;
 import java.util.Dictionary;
@@ -44,20 +46,22 @@ import java.util.regex.Pattern;
 
 import javax.xml.XMLConstants;
 import javax.xml.transform.stream.StreamSource;
-import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
 import javax.xml.validation.Validator;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.codice.ddf.security.common.jaxrs.RestSecurity;
+import org.joda.time.DateTime;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.ops4j.pax.exam.junit.PaxExam;
 import org.ops4j.pax.exam.spi.reactors.ExamReactorStrategy;
 import org.ops4j.pax.exam.spi.reactors.PerClass;
 import org.osgi.service.cm.Configuration;
+import org.xml.sax.SAXException;
 
 import com.jayway.restassured.response.Response;
 
@@ -78,6 +82,9 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
 
     private static final DynamicUrl WHO_AM_I_URL = new DynamicUrl(SERVICE_ROOT, "/whoami");
 
+    protected final DynamicUrl AUTHENTICATION_REQUEST_ISSUER = new DynamicUrl(SERVICE_ROOT,
+            "/saml");
+
     @BeforeExam
     public void beforeTest() throws Exception {
         basePort = getBasePort();
@@ -90,38 +97,51 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
         // Start the services needed for testing. We need to start the Search UI to test that it redirects properly
         getServiceManager().startFeature(true, "security-idp", "search-ui-app");
 
-        // Create a validator from the metadata schema so that we can validate the metadata
-        SchemaFactory schemaFactory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
-        Schema schema = schemaFactory.newSchema(getClass().getClassLoader().getResource("saml-schema-metadata-2.0.xsd"));
-        Validator validator = schema.newValidator();
-
         // Get the metadata
         String serverMetadata = get(SERVICE_ROOT + "/idp/login/metadata").asString();
         String clientMetadata = get(SERVICE_ROOT + "/saml/sso/metadata").asString();
 
         // Ensure the metadata is valid according to the SAML Metadata schema
+        Validator validator = getValidatorFor("saml-schema-metadata-2.0.xsd");
         validator.validate(new StreamSource(new StringReader(clientMetadata)));
         validator.validate(new StreamSource(new StringReader(serverMetadata)));
+
+        setMetadata(clientMetadata, "metadata", "org.codice.ddf.security.idp.client.IdpMetadata",
+                "saml-schema-metadata-2.0.xsd");
+        setMetadata(serverMetadata, "spMetadata", "org.codice.ddf.security.idp.server.IdpEndpoint",
+                "saml-schema-metadata-2.0.xsd");
+    }
+
+    private Validator getValidatorFor(String schemaFilename) throws SAXException {
+
+        // Create a XML schema validator
+        return SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(getClass().getClassLoader().getResource(schemaFilename)).newValidator();
+    }
+
+    private void setMetadata(String metadata, String propertyName, String pid,
+            String schemaFilename) throws SAXException, IOException {
+
+        // Ensure the metadata is valid according to the SAML Metadata schema
+        getValidatorFor(schemaFilename).validate(new StreamSource(new StringReader(metadata)));
 
         // To find the right inputs for the settings, go into the metatype.xml file.
         // The key is the "id" and the value type is determined by the cardinality as such:
         // Positive = array, negative = vector, 0 (none) = single variable
-        Dictionary<String, Object> clientSettings = new Hashtable<>();
-        clientSettings.put("metadata", serverMetadata);
-        Dictionary<String, Object> serverSettings = new Hashtable<>();
-        serverSettings.put("spMetadata", new String[] {clientMetadata});
+        Dictionary<String, Object> settings = new Hashtable<>();
+        settings.put(propertyName, metadata);
 
         // Update the client and server with the metadata
-        Configuration clientConfig = getAdminConfig()
-                .getConfiguration("org.codice.ddf.security.idp.client.IdpMetadata", null);
-        Configuration serverConfig = getAdminConfig()
-                .getConfiguration("org.codice.ddf.security.idp.server.IdpEndpoint", null);
-        clientConfig.update(clientSettings);
-        serverConfig.update(serverSettings);
-        expect("Configs to update").within(2, TimeUnit.MINUTES)
-                .until(clientConfig::getProperties, notNullValue());
-        expect("Configs to update").within(2, TimeUnit.MINUTES)
-                .until(serverConfig::getProperties, notNullValue());
+        final Configuration configuration = getAdminConfig().getConfiguration(pid, null);
+        configuration.update(settings);
+
+        //Wait for the updates to become effective
+        expect("Configs to update").
+                within(2, TimeUnit.MINUTES).
+                until(() -> configuration.getProperties() == null ?
+                                "" :
+                                (String) configuration.getProperties().get(propertyName),
+                        equalToIgnoringWhiteSpace(metadata));
     }
 
     private String getRedirectUrl(Response response) {
@@ -274,5 +294,35 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
 
         // Make sure we are logged in as admin.
         assertThat(getUserName(acsResponse.getCookies()), is("admin"));
+    }
+
+    private String getMockSamlRequest() throws IOException, SAXException {
+
+        String metadata = IOUtils
+                .toString(getClass().getResourceAsStream("/confluence-sp-metadata.xml"));
+        setMetadata(metadata, "spMetadata", "org.codice.ddf.security.idp.server.IdpEndpoint",
+                "saml-schema-metadata-2.0.xsd");
+        InputStream istream = this.getClass()
+                .getResourceAsStream("/confluence-sp-authentication-request.xml");
+        assertThat("Could not read resource file for single sign on test", istream, notNullValue());
+        String authRequestTemplate = IOUtils.toString(istream);
+        String issueInstant = new DateTime().toString();
+        String samlRequest = String
+                .format(authRequestTemplate, issueInstant, AUTHENTICATION_REQUEST_ISSUER);
+
+        return RestSecurity.deflateAndBase64Encode(samlRequest);
+    }
+
+    @Test
+    public void testConfluenceSso() throws Exception {
+        String idpUrl = new DynamicUrl(SERVICE_ROOT, "/idp/login/sso").getUrl();
+
+        given().
+                auth().preemptive().basic("admin","admin").
+                param("AuthMethod","up").
+                param("SAMLRequest", getMockSamlRequest()).
+                redirects().follow(false).
+        get(idpUrl).
+                statusCode();
     }
 }
