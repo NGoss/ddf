@@ -25,6 +25,7 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.core.AllOf.allOf;
 import static org.hamcrest.core.CombinableMatcher.both;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 import static com.jayway.restassured.RestAssured.get;
 import static com.jayway.restassured.RestAssured.given;
 import static com.jayway.restassured.authentication.CertificateAuthSettings.certAuthSettings;
@@ -34,6 +35,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.util.Dictionary;
 import java.util.HashMap;
 import java.util.Hashtable;
@@ -43,12 +45,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import javax.ws.rs.core.UriBuilder;
 import javax.xml.XMLConstants;
 import javax.xml.transform.stream.StreamSource;
 import javax.xml.validation.SchemaFactory;
 import javax.xml.validation.Validator;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.cxf.jaxrs.impl.UriBuilderImpl;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.http.conn.ssl.SSLSocketFactory;
@@ -65,6 +69,9 @@ import org.xml.sax.SAXException;
 import com.jayway.restassured.response.Response;
 
 import ddf.common.test.BeforeExam;
+import ddf.security.encryption.EncryptionService;
+import ddf.security.samlp.SimpleSign;
+import ddf.security.samlp.SystemCrypto;
 
 @RunWith(PaxExam.class)
 @ExamReactorStrategy(PerClass.class)
@@ -319,14 +326,26 @@ public class TestSingleSignOn extends AbstractIntegrationTest {
     public void testConfluenceSso() throws Exception {
         String idpUrl = new DynamicUrl(SERVICE_ROOT, "/idp/login/sso").getUrl();
         String mockSamlRequest = getMockSamlRequest();
-        
+
         // Sign the query string -> SAMLRequest="blah"&RelayState="blah"&SigAlg="blah"
+        String query = "SAMLRequest=" + URLEncoder.encode(mockSamlRequest, "UTF-8")
+                     + "&RelayState=" + "test";
+        String idpRequest = idpUrl + "?" + query;
+        UriBuilder idpUri = new UriBuilderImpl(new URI(idpRequest));
+
+        EncryptionService encryptionService = mock(EncryptionService.class);
+        SystemCrypto systemCrypto = new SystemCrypto("encryption.properties",
+                "signature.properties", encryptionService);
+        SimpleSign simpleSign = new SimpleSign(systemCrypto);
+        simpleSign.signUriString(query, idpUri);
+
+        String url = idpUri.build().toString();
 
         given().
                 auth().preemptive().basic("admin","admin").
                 param("AuthMethod","up").
                 param("SAMLRequest", mockSamlRequest).
-                param("RelayState", "TestRelayState").
+                param("RelayState", "test").
                 param("SigAlg","").
                 param("Signature", "").
                 redirects().follow(false).

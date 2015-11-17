@@ -96,6 +96,12 @@
             <classifier>features</classifier>
             <type>xml</type>
         </dependency>
+        <dependency>
+            <groupId>ddf.security.encryption</groupId>
+            <artifactId>security-encryption-api</artifactId>
+            <version>2.9.0-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
