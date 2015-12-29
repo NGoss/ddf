@@ -1,10 +1,10 @@
 /**
  * Copyright (c) Codice Foundation
- * <p/>
+ * <p>
  * This is free software: you can redistribute it and/or modify it under the terms of the GNU Lesser
  * General Public License as published by the Free Software Foundation, either version 3 of the
  * License, or any later version.
- * <p/>
+ * <p>
  * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
  * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * Lesser General Public License for more details. A copy of the GNU Lesser General Public License
@@ -33,8 +33,10 @@ import java.nio.file.Paths;
 import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.Vector;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.codice.ddf.configuration.persistence.felix.FelixPersistenceStrategy;
 import org.codice.ddf.configuration.status.ConfigurationFileException;
 import org.junit.Test;
@@ -43,6 +45,7 @@ import org.ops4j.pax.exam.Option;
 import org.ops4j.pax.exam.junit.PaxExam;
 import org.ops4j.pax.exam.spi.reactors.ExamReactorStrategy;
 import org.ops4j.pax.exam.spi.reactors.PerClass;
+import org.osgi.framework.BundleException;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +55,8 @@ import ddf.common.test.KarafConsole;
 import ddf.common.test.callables.GetConfigurationProperties;
 import ddf.common.test.matchers.ConfigurationPropertiesEqualTo;
 import ddf.test.itests.AbstractIntegrationTest;
+import ddf.test.itests.catalog.TestCatalog;
+import ddf.test.itests.common.Library;
 
 @RunWith(PaxExam.class)
 @ExamReactorStrategy(PerClass.class)
@@ -62,6 +67,8 @@ public class TestPlatform extends AbstractIntegrationTest {
     private static KarafConsole console;
 
     private static final String EXPORT_COMMAND = "platform:config-export";
+
+    private static final String SEARCH_COMMAND = "catalog:search";
 
     /**
      * Class that provides utility and assertion methods for a Managed Service Felix configuration
@@ -368,6 +375,7 @@ public class TestPlatform extends AbstractIntegrationTest {
         getAdminConfig().setLogLevels();
         getServiceManager().waitForAllBundles();
         console = new KarafConsole(bundleCtx);
+        basePort = getBasePort();
     }
 
     /**
@@ -760,4 +768,41 @@ public class TestPlatform extends AbstractIntegrationTest {
                 keystoreFiles,
                 arrayContainingInAnyOrder(fileNames));
     }
+
+    @Test
+    public void testSolrServerFactoryGracePeriod() throws BundleException {
+        //Bring down solr server factory and embedded solr server bundles
+
+        TestCatalog.ingestGeoJson(Library.getSimpleGeoJson());
+        String client = "catalog-solr-external-provider";
+        String server = "platform-solr-server-standalone";
+        getServiceManager().stopBundle(client);
+        getServiceManager().stopBundle(server);
+
+        //Bring up solr server factory, make sure it's in grace period
+        getServiceManager().startBundle(client);
+        assertThat("Search should fail.",
+                console.runCommand(SEARCH_COMMAND,
+                        new RolePrincipal("admin"),
+                        new RolePrincipal("group"),
+                        new RolePrincipal("manager"),
+                        new RolePrincipal("viewer"),
+                        new RolePrincipal("webconsole")),
+                containsString("0 result"));
+
+        //Then bring up embedded solr server
+        getServiceManager().startBundle(server);
+
+        //Verify that they're both started successfully now
+        expect("Both bundles should have started successfully, and command should succeed.").within(
+                5,
+                TimeUnit.MINUTES)
+                .until(() -> console.runCommand(SEARCH_COMMAND,
+                        new RolePrincipal("admin"),
+                        new RolePrincipal("group"),
+                        new RolePrincipal("manager"),
+                        new RolePrincipal("viewer"),
+                        new RolePrincipal("webconsole")), containsString("1 result"));
+    }
+
 }
