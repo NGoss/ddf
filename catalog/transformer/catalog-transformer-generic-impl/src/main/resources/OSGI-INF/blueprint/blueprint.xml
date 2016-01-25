@@ -64,4 +64,12 @@
     </cm:managed-service-factory>
 
 
+    <bean id="gml3ToWktParser" class="org.codice.ddf.parser.xml.XmlParser"/>
+    <bean id="gml3ToWkt" class="ddf.catalog.transformer.generic.xml.impl.Gml3ToWktImpl">
+        <argument ref="gml3ToWktParser"/>
+    </bean>
+
+    <service id="Gml3ToWkt" ref="gml3ToWkt" interface="ddf.catalog.transformer.generic.xml.api.Gml3ToWkt"/>
+
+
 </blueprint>
