@@ -25,9 +25,9 @@ public class ValidatorConfigReader {
     private RuleSet ruleSet;
 
     /**
-     * Constructor
+     * Constructs the ValidatorConfigReader and reads in the xml rubric
      *
-     * @param
+     * @param inputStream   an input stream containing the rule set from the xml resource
      */
     public ValidatorConfigReader(InputStream inputStream) throws JAXBException {
         JAXBContext jaxbContext = JAXBContext.newInstance(RuleSet.class);
@@ -38,7 +38,7 @@ public class ValidatorConfigReader {
     /**
      * Returns a java object which represents the scoring rubric for the validator(s)
      *
-     * @return
+     * @return  ruleSet     a java object representing the xml rule set
      */
     public RuleSet getRuleSet() {
         return ruleSet;

@@ -17,6 +17,10 @@ package org.codice.ddf.commands.util;
 import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 
+/**
+ * Pojo class for parsing in the validator scoring rubric
+ */
+
 public class IndividualRule {
 
     @XmlAttribute
